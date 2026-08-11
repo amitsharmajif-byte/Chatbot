@@ -1,0 +1,223 @@
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QPushButton,
+    QSplitter, QMessageBox, QFrame, QApplication
+)
+from PySide6.QtGui import QShortcut, QKeySequence
+from app.services.chat_service import ChatService
+from app.llm.model_manager import ModelManager
+from app.ui.sidebar import Sidebar
+from app.ui.chat_window import ChatWindow
+from app.ui.settings_window import SettingsWindow
+from app.ui.styles import StyleManager
+from app.core.config import APP_NAME, APP_VERSION
+from app.core.logger import logger
+
+class MainWindow(QMainWindow):
+    """Main Application Window for LocalAI Chat."""
+
+    def __init__(self, chat_service: ChatService, model_manager: ModelManager):
+        super().__init__()
+        self.chat_service = chat_service
+        self.model_manager = model_manager
+
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
+        self.resize(1100, 750)
+        self.setMinimumSize(800, 550)
+
+        # Main Central Widget & Layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Header Bar
+        self.header_bar = QWidget()
+        self.header_bar.setObjectName("HeaderBar")
+        header_layout = QHBoxLayout(self.header_bar)
+        header_layout.setContentsMargins(16, 8, 16, 8)
+
+        app_title = QLabel(APP_NAME)
+        app_title.setObjectName("AppTitleLabel")
+
+        # Model Selector Dropdown
+        model_label = QLabel("Model:")
+        model_label.setStyleSheet("color: #94a3b8; font-weight: 500; margin-left: 12px;")
+
+        self.model_combo = QComboBox()
+        self.model_combo.setToolTip("Select active local LLM model")
+        self.model_combo.currentTextChanged.connect(self.on_model_changed)
+
+        # Refresh Models Button
+        refresh_models_btn = QPushButton("🔄")
+        refresh_models_btn.setObjectName("IconButton")
+        refresh_models_btn.setToolTip("Refresh Ollama installed models list")
+        refresh_models_btn.setFixedSize(32, 32)
+        refresh_models_btn.clicked.connect(self.populate_models)
+
+        # Settings Button
+        settings_btn = QPushButton("⚙")
+        settings_btn.setObjectName("IconButton")
+        settings_btn.setToolTip("Open Settings (Ctrl+,)")
+        settings_btn.setFixedSize(32, 32)
+        settings_btn.clicked.connect(self.open_settings)
+
+        header_layout.addWidget(app_title)
+        header_layout.addStretch()
+        header_layout.addWidget(model_label)
+        header_layout.addWidget(self.model_combo)
+        header_layout.addWidget(refresh_models_btn)
+        header_layout.addWidget(settings_btn)
+
+        main_layout.addWidget(self.header_bar)
+
+        # Splitter Layout (Sidebar + ChatWindow)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(1)
+
+        self.sidebar = Sidebar(chat_service=self.chat_service)
+        self.sidebar.new_chat_requested.connect(self.on_new_chat)
+        self.sidebar.conversation_selected.connect(self.on_conversation_selected)
+        self.sidebar.settings_requested.connect(self.open_settings)
+        self.sidebar.conversation_deleted.connect(self.on_conversation_deleted)
+
+        self.chat_window = ChatWindow(chat_service=self.chat_service)
+        self.chat_window.conversation_updated.connect(self.on_conversation_updated)
+
+        splitter.addWidget(self.sidebar)
+        splitter.addWidget(self.chat_window)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+
+        main_layout.addWidget(splitter, 1)
+
+        # Setup Keyboard Shortcuts
+        self.setup_shortcuts()
+
+        # Apply Theme
+        self.apply_theme()
+
+        # Populate Models & Check Health
+        self.populate_models()
+        self.check_ollama_health_on_launch()
+
+    def apply_theme(self):
+        """Apply theme QSS based on settings."""
+        theme_name = self.chat_service.settings.theme
+        qss = StyleManager.get_style(theme_name)
+        self.setStyleSheet(qss)
+        self.chat_window.input_box.set_enter_to_send(self.chat_service.settings.enter_to_send)
+
+    def populate_models(self):
+        """Query Ollama and populate model selector dropdown."""
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+
+        models = self.model_manager.get_installed_models()
+        if models:
+            self.model_combo.addItems(models)
+            default_model = self.model_manager.get_default_model(self.chat_service.settings.default_model)
+            if default_model in models:
+                self.model_combo.setCurrentText(default_model)
+            self.chat_window.current_model = self.model_combo.currentText()
+        else:
+            self.model_combo.addItem("No models found")
+
+        self.model_combo.blockSignals(False)
+
+    def check_ollama_health_on_launch(self):
+        """Check Ollama service status on startup."""
+        if not self.model_manager.check_health():
+            QMessageBox.warning(
+                self,
+                "Ollama Not Detected",
+                "Unable to connect to local Ollama server at http://localhost:11434.\n\n"
+                "Please make sure Ollama is installed and running on your computer.\n"
+                "After starting Ollama, click the 🔄 refresh button in the header bar."
+            )
+        elif not self.model_manager.get_installed_models():
+            QMessageBox.information(
+                self,
+                "No Local Models Found",
+                "Welcome to LocalAI Chat!\n\n"
+                "To start chatting, you need to download a model in Ollama.\n"
+                "Open your terminal and run a model command such as:\n\n"
+                "  ollama run qwen2.5\n"
+                "  or\n"
+                "  ollama run llama3.2\n\n"
+                "Once downloaded, click 🔄 refresh to load the model."
+            )
+
+    def setup_shortcuts(self):
+        """Register application global shortcuts."""
+        # Ctrl + N -> New Chat
+        QShortcut(QKeySequence("Ctrl+N"), self, self.on_new_chat)
+
+        # Ctrl + K -> Search Chats
+        QShortcut(QKeySequence("Ctrl+K"), self, self.sidebar.focus_search)
+
+        # Ctrl + , -> Settings
+        QShortcut(QKeySequence("Ctrl+,"), self, self.open_settings)
+
+        # Esc -> Stop Generation
+        QShortcut(QKeySequence("Escape"), self, self.chat_window.stop_generation)
+
+        # Ctrl + Shift + C -> Copy Response
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.copy_last_assistant_response)
+
+    def on_model_changed(self, model_name: str):
+        """Update active model in chat window."""
+        if model_name and model_name != "No models found":
+            self.chat_window.current_model = model_name
+
+    def on_new_chat(self):
+        """Create new conversation session."""
+        model_name = self.model_combo.currentText()
+        if model_name == "No models found":
+            model_name = ""
+        conv = self.chat_service.create_new_conversation(model_name=model_name)
+        self.sidebar.refresh_history()
+        self.sidebar.select_conversation(conv.id)
+        self.chat_window.load_conversation(conv.id, model_name=model_name)
+
+    def on_conversation_selected(self, conversation_id: str):
+        """Load selected conversation into chat window."""
+        self.chat_window.load_conversation(conversation_id, model_name=self.model_combo.currentText())
+
+    def on_conversation_updated(self, conversation_id: str):
+        """Refresh sidebar list when conversation title/messages update."""
+        self.sidebar.refresh_history()
+        self.sidebar.select_conversation(conversation_id)
+
+    def on_conversation_deleted(self, conversation_id: str):
+        """Handle active conversation deletion."""
+        if self.chat_window.current_conversation_id == conversation_id:
+            self.on_new_chat()
+
+    def open_settings(self):
+        """Open settings modal dialog."""
+        dialog = SettingsWindow(
+            chat_service=self.chat_service,
+            model_manager=self.model_manager,
+            parent=self
+        )
+        dialog.settings_saved.connect(self.on_settings_saved)
+        dialog.exec_()
+
+    def on_settings_saved(self):
+        """Handle settings saved event."""
+        self.apply_theme()
+        self.populate_models()
+
+    def copy_last_assistant_response(self):
+        """Copy text of the last assistant response to clipboard."""
+        conv_id = self.chat_window.current_conversation_id
+        if conv_id:
+            conv = self.chat_service.load_conversation(conv_id)
+            if conv and conv.messages:
+                for msg in reversed(conv.messages):
+                    if msg.role == "assistant":
+                        QApplication.clipboard().setText(msg.content)
+                        break
