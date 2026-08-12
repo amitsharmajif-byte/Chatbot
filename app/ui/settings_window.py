@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QLabel, QComboBox,
-    QSlider, QDoubleSpinBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QMessageBox, QFileDialog, QFormLayout, QGroupBox
+    QSlider, QDoubleSpinBox, QSpinBox, QTextEdit, QCheckBox, QPushButton, QMessageBox, QFileDialog, QFormLayout, QGroupBox, QLineEdit
 )
 from app.services.chat_service import ChatService
 from app.database.models import AppSettings
@@ -66,8 +66,6 @@ class SettingsWindow(QDialog):
         btn_box.addWidget(save_btn)
 
         main_layout.addLayout(btn_box)
-
-from PySide6.QtWidgets import QLineEdit
 
     def init_model_tab(self):
         layout = QFormLayout(self.model_tab)
