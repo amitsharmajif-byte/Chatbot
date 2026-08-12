@@ -1,7 +1,7 @@
 import os
-import json
 import requests
 from typing import List, Dict, Generator, Optional, Union
+from huggingface_hub import InferenceClient
 from app.llm.base import LLMProvider
 from app.core.logger import logger
 from app.core.exceptions import LocalAIException
@@ -11,17 +11,19 @@ DEFAULT_HF_MODELS = [
     "meta-llama/Llama-3.1-8B-Instruct",
     "mistralai/Mistral-7B-Instruct-v0.3",
     "google/gemma-2-9b-it",
-    "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+    "HuggingFaceH4/zephyr-7b-beta",
+    "microsoft/Phi-3-mini-4k-instruct",
 ]
 
 class HuggingFaceProvider(LLMProvider):
-    """Hugging Face Serverless Inference API provider."""
+    """Hugging Face Serverless Inference API provider using official InferenceClient."""
 
     def __init__(self, api_key: str = "", default_models: Optional[List[str]] = None):
         self.raw_api_key = api_key
         self.api_key = self._resolve_api_key(api_key)
-        self.models = default_models or DEFAULT_HF_MODELS
-        self.base_url = "https://router.huggingface.co/hf-inference/v1/chat/completions"
+        self.models = default_models or list(DEFAULT_HF_MODELS)
+        self._client: Optional[InferenceClient] = None
 
     def _resolve_api_key(self, provided_key: str) -> str:
         """Resolve API key from explicit parameter or environment variables."""
@@ -32,16 +34,19 @@ class HuggingFaceProvider(LLMProvider):
                 if env_val:
                     key = env_val
                     break
-
-        # Strip surrounding quotes, newlines, or spaces
         return key.strip("'\" \t\r\n")
+
+    def _get_client(self) -> InferenceClient:
+        """Get or create a cached InferenceClient instance."""
+        if self._client is None:
+            self._client = InferenceClient(token=self.api_key)
+        return self._client
 
     def get_token_info(self) -> Dict[str, Union[bool, int, str]]:
         """Return safe, non-sensitive diagnostic info about the current token."""
         token = self.api_key
         if not token:
             return {"present": False, "length": 0, "masked": "Not Configured"}
-        
         masked = f"{token[:3]}...{token[-4:]}" if len(token) > 7 else "***"
         return {"present": True, "length": len(token), "masked": masked}
 
@@ -50,11 +55,11 @@ class HuggingFaceProvider(LLMProvider):
         return bool(self.api_key)
 
     def list_models(self) -> List[str]:
-        """Return list of supported Hugging Face open-source models with dynamic discovery fallback."""
+        """Return list of supported Hugging Face models with dynamic discovery fallback."""
         discovered = []
         try:
             url = "https://huggingface.co/api/models?pipeline_tag=text-generation&sort=downloads&direction=-1&limit=15"
-            headers = self._headers() if self.api_key else {}
+            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
             response = requests.get(url, headers=headers, timeout=4)
             if response.status_code == 200:
                 data = response.json()
@@ -65,38 +70,17 @@ class HuggingFaceProvider(LLMProvider):
         except Exception as e:
             logger.warning(f"Live HF model discovery failed, using curated default list: {e}")
 
-        # Combine curated defaults and discovered models
         combined = list(self.models)
         for d in discovered:
             if d not in combined:
                 combined.append(d)
         return combined
 
-    def _headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-    def _parse_error_response(self, response: requests.Response) -> str:
-        if response.status_code == 401:
-            return (
-                "Authentication Failed (HTTP 401: Invalid Token).\n"
-                "Please verify your Hugging Face API Token in Settings (⚙) or in your .env file (HF_TOKEN).\n"
-                "Get a free token at https://huggingface.co/settings/tokens with 'Read' permission."
-            )
-
-        try:
-            data = response.json()
-            if isinstance(data, dict):
-                error = data.get("error") or data.get("message")
-                if error:
-                    if isinstance(error, dict):
-                        return error.get("message", str(error))
-                    return str(error)
-            return response.text
-        except Exception:
-            return response.text
+    def _clean_model(self, model: str) -> str:
+        """Sanitize model name, falling back to default if invalid."""
+        if model and model.strip() and "No models" not in model:
+            return model.strip()
+        return self.models[0]
 
     def test_authentication(self) -> Dict[str, Union[bool, str]]:
         """Test A: Verify token authentication independently of any model."""
@@ -105,10 +89,9 @@ class HuggingFaceProvider(LLMProvider):
                 "success": False,
                 "message": "✗ Token missing. Please enter your Hugging Face Token (hf_...) in Settings or set HF_TOKEN in .env file."
             }
-
         try:
             url = "https://huggingface.co/api/whoami-v2"
-            response = requests.get(url, headers=self._headers(), timeout=10)
+            response = requests.get(url, headers={"Authorization": f"Bearer {self.api_key}"}, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 username = data.get("name") or "Authenticated User"
@@ -138,32 +121,24 @@ class HuggingFaceProvider(LLMProvider):
             }
 
     def test_model_compatibility(self, model: str = "") -> Dict[str, Union[bool, str]]:
-        """Test B: Test if a specific model is supported and reachable on Serverless Router."""
-        clean_model = model.strip() if (model and model.strip() and "No models" not in model) else self.models[0]
-        payload = {
-            "model": clean_model,
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 5,
-            "stream": False
-        }
-
+        """Test B: Test if a specific model is reachable via InferenceClient."""
+        clean_model = self._clean_model(model)
         try:
-            response = requests.post(self.base_url, headers=self._headers(), json=payload, timeout=12)
-            if response.status_code == 200:
-                return {
-                    "success": True,
-                    "message": f"✓ Model '{clean_model}' is active and reachable."
-                }
-            else:
-                err_msg = self._parse_error_response(response)
-                return {
-                    "success": False,
-                    "message": f"⚠️ Model Reachability Notice ({response.status_code}):\n{err_msg}"
-                }
-        except requests.exceptions.RequestException as e:
+            client = self._get_client()
+            output = client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model=clean_model,
+                max_tokens=5,
+            )
+            return {
+                "success": True,
+                "message": f"✓ Model '{clean_model}' is active and reachable."
+            }
+        except Exception as e:
+            err_str = str(e)
             return {
                 "success": False,
-                "message": f"✗ Inference Request Network Error: {e}"
+                "message": f"⚠ Model '{clean_model}' reachability notice:\n{err_str[:300]}"
             }
 
     def test_connection(self, model: str = "") -> Dict[str, Union[bool, str]]:
@@ -189,38 +164,31 @@ class HuggingFaceProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> str:
-        """Generate response via Hugging Face chat completion API."""
+        """Generate response via Hugging Face InferenceClient chat completion."""
         if not self.api_key:
             raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙) or HF_TOKEN in .env.")
 
-        clean_model = model.strip() if (model and model.strip() and "No models" not in model) else self.models[0]
+        clean_model = self._clean_model(model)
         formatted_messages = []
         if system_prompt:
             formatted_messages.append({"role": "system", "content": system_prompt})
         formatted_messages.extend(messages)
 
-        payload = {
-            "model": clean_model,
-            "messages": formatted_messages,
-            "temperature": min(max(temperature, 0.01), 1.0),
-            "max_tokens": min(max_tokens, 1024),
-            "stream": False
-        }
-
         try:
-            response = requests.post(self.base_url, headers=self._headers(), json=payload, timeout=60)
-            if response.status_code != 200:
-                err_msg = self._parse_error_response(response)
-                raise LocalAIException(f"Hugging Face Error ({response.status_code}): {err_msg}")
-
-            data = response.json()
-            choices = data.get("choices", [])
-            if choices:
-                return choices[0].get("message", {}).get("content", "")
+            client = self._get_client()
+            output = client.chat_completion(
+                messages=formatted_messages,
+                model=clean_model,
+                temperature=min(max(temperature, 0.01), 1.0),
+                max_tokens=min(max_tokens, 4096),
+            )
+            choices = output.choices
+            if choices and len(choices) > 0:
+                return choices[0].message.content or ""
             return ""
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.error(f"Hugging Face API request failed: {e}")
-            raise LocalAIException(f"Hugging Face Connection Error: {e}")
+            raise LocalAIException(f"Hugging Face Error: {e}")
 
     def stream(
         self,
@@ -230,53 +198,30 @@ class HuggingFaceProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 1024,
     ) -> Generator[str, None, None]:
-        """Stream response tokens via Hugging Face Serverless SSE API."""
+        """Stream response tokens via Hugging Face InferenceClient."""
         if not self.api_key:
             raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙) or HF_TOKEN in .env.")
 
-        clean_model = model.strip() if (model and model.strip() and "No models" not in model) else self.models[0]
+        clean_model = self._clean_model(model)
         formatted_messages = []
         if system_prompt:
             formatted_messages.append({"role": "system", "content": system_prompt})
         formatted_messages.extend(messages)
 
-        payload = {
-            "model": clean_model,
-            "messages": formatted_messages,
-            "temperature": min(max(temperature, 0.01), 1.0),
-            "max_tokens": min(max_tokens, 1024),
-            "stream": True
-        }
-
         try:
-            with requests.post(
-                self.base_url,
-                headers=self._headers(),
-                json=payload,
+            client = self._get_client()
+            stream_output = client.chat_completion(
+                messages=formatted_messages,
+                model=clean_model,
+                temperature=min(max(temperature, 0.01), 1.0),
+                max_tokens=min(max_tokens, 4096),
                 stream=True,
-                timeout=60
-            ) as response:
-                if response.status_code != 200:
-                    err_msg = self._parse_error_response(response)
-                    raise LocalAIException(f"Hugging Face Error ({response.status_code}): {err_msg}")
-
-                for line in response.iter_lines(decode_unicode=True):
-                    if line:
-                        line = line.strip()
-                        if line.startswith("data:"):
-                            data_str = line[5:].strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(data_str)
-                                choices = data.get("choices", [])
-                                if choices:
-                                    delta = choices[0].get("delta", {}).get("content", "")
-                                    if delta:
-                                        yield delta
-                            except json.JSONDecodeError:
-                                continue
-
-        except requests.exceptions.RequestException as e:
+            )
+            for chunk in stream_output:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        yield delta.content
+        except Exception as e:
             logger.error(f"Hugging Face streaming failed: {e}")
-            raise LocalAIException(f"Hugging Face Connection Error: {e}")
+            raise LocalAIException(f"Hugging Face Error: {e}")
