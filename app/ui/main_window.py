@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QPushButton,
     QSplitter, QMessageBox, QFrame, QApplication
@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
 
         # Populate Models & Check Health
         self.populate_models()
-        self.check_ollama_health_on_launch()
+        QTimer.singleShot(600, self.check_ollama_health_on_launch)
 
     def apply_theme(self):
         """Apply theme QSS based on settings."""
