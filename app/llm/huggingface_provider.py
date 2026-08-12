@@ -1,6 +1,7 @@
+import os
 import json
 import requests
-from typing import List, Dict, Generator, Optional
+from typing import List, Dict, Generator, Optional, Union
 from app.llm.base import LLMProvider
 from app.core.logger import logger
 from app.core.exceptions import LocalAIException
@@ -17,12 +18,35 @@ class HuggingFaceProvider(LLMProvider):
     """Hugging Face Serverless Inference API provider."""
 
     def __init__(self, api_key: str = "", default_models: Optional[List[str]] = None):
-        self.api_key = api_key.strip()
+        self.raw_api_key = api_key
+        self.api_key = self._resolve_api_key(api_key)
         self.models = default_models or DEFAULT_HF_MODELS
         self.base_url = "https://router.huggingface.co/hf-inference/v1/chat/completions"
 
+    def _resolve_api_key(self, provided_key: str) -> str:
+        """Resolve API key from explicit parameter or environment variables."""
+        key = provided_key.strip() if provided_key else ""
+        if not key:
+            for env_var in ("HF_TOKEN", "HUGGINGFACE_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HF_API_TOKEN"):
+                env_val = os.environ.get(env_var, "").strip()
+                if env_val:
+                    key = env_val
+                    break
+
+        # Strip surrounding quotes or spaces if any
+        return key.strip("'\" \t\r\n")
+
+    def get_token_info(self) -> Dict[str, Union[bool, int, str]]:
+        """Return safe, non-sensitive diagnostic info about the current token."""
+        token = self.api_key
+        if not token:
+            return {"present": False, "length": 0, "masked": "Not Configured"}
+        
+        masked = f"{token[:3]}...{token[-4:]}" if len(token) > 7 else "***"
+        return {"present": True, "length": len(token), "masked": masked}
+
     def is_available(self) -> bool:
-        """Check if API key is provided."""
+        """Check if API key is present."""
         return bool(self.api_key)
 
     def list_models(self) -> List[str]:
@@ -36,6 +60,13 @@ class HuggingFaceProvider(LLMProvider):
         }
 
     def _parse_error_response(self, response: requests.Response) -> str:
+        if response.status_code == 401:
+            return (
+                "Authentication Failed (HTTP 401: Invalid Token).\n"
+                "Please verify your Hugging Face API Token in Settings (⚙) or in your .env file (HF_TOKEN).\n"
+                "Get a free token at https://huggingface.co/settings/tokens with 'Read' permission."
+            )
+
         try:
             data = response.json()
             if isinstance(data, dict):
@@ -48,6 +79,46 @@ class HuggingFaceProvider(LLMProvider):
         except Exception:
             return response.text
 
+    def test_connection(self, model: str = "") -> Dict[str, Union[bool, str]]:
+        """Test authentication and model accessibility safely."""
+        if not self.is_available():
+            return {
+                "success": False,
+                "message": "✗ Token missing. Please enter your Hugging Face Token (hf_...) in Settings or set HF_TOKEN in .env file."
+            }
+
+        target_model = model.strip() if (model and model.strip()) else self.models[0]
+        payload = {
+            "model": target_model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 5,
+            "stream": False
+        }
+
+        try:
+            response = requests.post(self.base_url, headers=self._headers(), json=payload, timeout=12)
+            if response.status_code == 200:
+                info = self.get_token_info()
+                return {
+                    "success": True,
+                    "message": (
+                        f"✓ Hugging Face Authentication Successful!\n"
+                        f"• Token Status: Active ({info['masked']}, len: {info['length']})\n"
+                        f"• Model Reachable: {target_model}"
+                    )
+                }
+            else:
+                err_msg = self._parse_error_response(response)
+                return {
+                    "success": False,
+                    "message": f"✗ Connection Test Failed ({response.status_code}):\n{err_msg}"
+                }
+        except requests.exceptions.RequestException as e:
+            return {
+                "success": False,
+                "message": f"✗ Network Connection Error: {e}"
+            }
+
     def generate(
         self,
         messages: List[Dict[str, str]],
@@ -58,7 +129,7 @@ class HuggingFaceProvider(LLMProvider):
     ) -> str:
         """Generate response via Hugging Face chat completion API."""
         if not self.api_key:
-            raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙).")
+            raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙) or HF_TOKEN in .env.")
 
         target_model = model.strip() if (model and model.strip()) else self.models[0]
         formatted_messages = []
@@ -99,7 +170,7 @@ class HuggingFaceProvider(LLMProvider):
     ) -> Generator[str, None, None]:
         """Stream response tokens via Hugging Face Serverless SSE API."""
         if not self.api_key:
-            raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙).")
+            raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙) or HF_TOKEN in .env.")
 
         target_model = model.strip() if (model and model.strip()) else self.models[0]
         formatted_messages = []

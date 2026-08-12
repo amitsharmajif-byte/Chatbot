@@ -2,7 +2,12 @@ import os
 from pathlib import Path
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Load .env file from BASE_DIR if present
+load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 DATA_DIR = BASE_DIR / "data"
 LOGS_DIR = BASE_DIR / "logs"

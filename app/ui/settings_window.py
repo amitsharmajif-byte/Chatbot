@@ -87,7 +87,17 @@ class SettingsWindow(QDialog):
         self.hf_key_edit.setEchoMode(QLineEdit.Password)
         self.hf_key_edit.setPlaceholderText("hf_... (Get free API key from huggingface.co/settings/tokens)")
         self.hf_key_edit.setText(self.settings.huggingface_api_key)
-        layout.addRow("Hugging Face Token:", self.hf_key_edit)
+
+        test_conn_btn = QPushButton("🧪 Test HF Connection")
+        test_conn_btn.setObjectName("IconButton")
+        test_conn_btn.setToolTip("Test Hugging Face Token validity and model reachability")
+        test_conn_btn.clicked.connect(self.test_hf_connection)
+
+        hf_key_layout = QHBoxLayout()
+        hf_key_layout.addWidget(self.hf_key_edit)
+        hf_key_layout.addWidget(test_conn_btn)
+
+        layout.addRow("Hugging Face Token:", hf_key_layout)
 
         # Default Model Dropdown
         self.model_combo = QComboBox()
@@ -128,6 +138,18 @@ class SettingsWindow(QDialog):
 
     def on_provider_changed(self, index: int):
         self.refresh_model_combo()
+
+    def test_hf_connection(self):
+        from app.llm.huggingface_provider import HuggingFaceProvider
+        entered_key = self.hf_key_edit.text().strip()
+        selected_model = self.model_combo.currentText()
+        provider = HuggingFaceProvider(api_key=entered_key)
+
+        res = provider.test_connection(model=selected_model)
+        if res["success"]:
+            QMessageBox.information(self, "Hugging Face Test Success", res["message"])
+        else:
+            QMessageBox.warning(self, "Hugging Face Test Result", res["message"])
 
     def refresh_model_combo(self):
         self.model_combo.clear()
