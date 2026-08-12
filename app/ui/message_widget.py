@@ -73,7 +73,7 @@ def markdown_to_html(md_text: str) -> str:
             p = p.replace("\n", "<br>")
         html_paragraphs.append(p)
 
-    return "".join(html_paragraphs)
+    return f'<div style="color: inherit; font-size: 14px; line-height: 1.5;">{"".join(html_paragraphs)}</div>'
 
 
 class MessageWidget(QWidget):
@@ -117,7 +117,10 @@ class MessageWidget(QWidget):
         # Text Browser Content View
         self.text_view = QTextBrowser()
         self.text_view.setOpenExternalLinks(True)
-        self.text_view.setStyleSheet("background: transparent; border: none;")
+        if role == "user":
+            self.text_view.setStyleSheet("background: transparent; border: none; color: #ffffff; font-size: 14px;")
+        else:
+            self.text_view.setStyleSheet("background: transparent; border: none; color: #f1f5f9; font-size: 14px;")
         self.text_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.update_content(content)

@@ -211,6 +211,18 @@ class StyleManager:
     }
 
     /* Message Cards */
+    QTextBrowser {
+        background-color: transparent;
+        border: none;
+        color: #f1f5f9;
+    }
+    #UserMessageCard QTextBrowser {
+        color: #ffffff;
+    }
+    #AssistantMessageCard QTextBrowser {
+        color: #f1f5f9;
+    }
+
     #UserMessageCard {
         background-color: #252538;
         border: 1px solid #33334a;
