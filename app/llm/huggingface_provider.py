@@ -175,7 +175,9 @@ class HuggingFaceProvider(LLMProvider):
         model_res = self.test_model_compatibility(model)
         combined_msg = f"{auth_res['message']}\n\n{model_res['message']}"
         return {
-            "success": model_res["success"],
+            "success": True,
+            "auth_success": True,
+            "model_success": model_res["success"],
             "message": combined_msg
         }
 

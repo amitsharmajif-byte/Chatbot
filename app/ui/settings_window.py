@@ -146,8 +146,8 @@ class SettingsWindow(QDialog):
         provider = HuggingFaceProvider(api_key=entered_key)
 
         res = provider.test_connection(model=selected_model)
-        if res["success"]:
-            QMessageBox.information(self, "Hugging Face Test Success", res["message"])
+        if res.get("auth_success", res["success"]):
+            QMessageBox.information(self, "Hugging Face Test Result", res["message"])
         else:
             QMessageBox.warning(self, "Hugging Face Test Result", res["message"])
 
