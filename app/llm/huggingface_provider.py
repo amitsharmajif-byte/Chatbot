@@ -33,7 +33,7 @@ class HuggingFaceProvider(LLMProvider):
                     key = env_val
                     break
 
-        # Strip surrounding quotes or spaces if any
+        # Strip surrounding quotes, newlines, or spaces
         return key.strip("'\" \t\r\n")
 
     def get_token_info(self) -> Dict[str, Union[bool, int, str]]:
@@ -50,8 +50,27 @@ class HuggingFaceProvider(LLMProvider):
         return bool(self.api_key)
 
     def list_models(self) -> List[str]:
-        """Return curated list of supported Hugging Face open-source models."""
-        return self.models
+        """Return list of supported Hugging Face open-source models with dynamic discovery fallback."""
+        discovered = []
+        try:
+            url = "https://huggingface.co/api/models?pipeline_tag=text-generation&sort=downloads&direction=-1&limit=15"
+            headers = self._headers() if self.api_key else {}
+            response = requests.get(url, headers=headers, timeout=4)
+            if response.status_code == 200:
+                data = response.json()
+                for m in data:
+                    model_id = m.get("id")
+                    if model_id and model_id not in discovered:
+                        discovered.append(model_id)
+        except Exception as e:
+            logger.warning(f"Live HF model discovery failed, using curated default list: {e}")
+
+        # Combine curated defaults and discovered models
+        combined = list(self.models)
+        for d in discovered:
+            if d not in combined:
+                combined.append(d)
+        return combined
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -79,17 +98,50 @@ class HuggingFaceProvider(LLMProvider):
         except Exception:
             return response.text
 
-    def test_connection(self, model: str = "") -> Dict[str, Union[bool, str]]:
-        """Test authentication and model accessibility safely."""
+    def test_authentication(self) -> Dict[str, Union[bool, str]]:
+        """Test A: Verify token authentication independently of any model."""
         if not self.is_available():
             return {
                 "success": False,
                 "message": "✗ Token missing. Please enter your Hugging Face Token (hf_...) in Settings or set HF_TOKEN in .env file."
             }
 
-        target_model = model.strip() if (model and model.strip()) else self.models[0]
+        try:
+            url = "https://huggingface.co/api/whoami-v2"
+            response = requests.get(url, headers=self._headers(), timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                username = data.get("name") or "Authenticated User"
+                info = self.get_token_info()
+                return {
+                    "success": True,
+                    "message": (
+                        f"✓ Hugging Face Authentication Successful!\n"
+                        f"• Account: @{username}\n"
+                        f"• Token Status: Active ({info['masked']}, len: {info['length']})"
+                    )
+                }
+            elif response.status_code == 401:
+                return {
+                    "success": False,
+                    "message": "✗ Authentication Failed (HTTP 401: Invalid or Expired Token).\nPlease check your token."
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"✗ Authentication Probe Returned Status {response.status_code}: {response.text[:200]}"
+                }
+        except requests.exceptions.RequestException as e:
+            return {
+                "success": False,
+                "message": f"✗ Network Connection Error: {e}"
+            }
+
+    def test_model_compatibility(self, model: str = "") -> Dict[str, Union[bool, str]]:
+        """Test B: Test if a specific model is supported and reachable on Serverless Router."""
+        clean_model = model.strip() if (model and model.strip() and "No models" not in model) else self.models[0]
         payload = {
-            "model": target_model,
+            "model": clean_model,
             "messages": [{"role": "user", "content": "ping"}],
             "max_tokens": 5,
             "stream": False
@@ -98,26 +150,34 @@ class HuggingFaceProvider(LLMProvider):
         try:
             response = requests.post(self.base_url, headers=self._headers(), json=payload, timeout=12)
             if response.status_code == 200:
-                info = self.get_token_info()
                 return {
                     "success": True,
-                    "message": (
-                        f"✓ Hugging Face Authentication Successful!\n"
-                        f"• Token Status: Active ({info['masked']}, len: {info['length']})\n"
-                        f"• Model Reachable: {target_model}"
-                    )
+                    "message": f"✓ Model '{clean_model}' is active and reachable."
                 }
             else:
                 err_msg = self._parse_error_response(response)
                 return {
                     "success": False,
-                    "message": f"✗ Connection Test Failed ({response.status_code}):\n{err_msg}"
+                    "message": f"⚠️ Model Reachability Notice ({response.status_code}):\n{err_msg}"
                 }
         except requests.exceptions.RequestException as e:
             return {
                 "success": False,
-                "message": f"✗ Network Connection Error: {e}"
+                "message": f"✗ Inference Request Network Error: {e}"
             }
+
+    def test_connection(self, model: str = "") -> Dict[str, Union[bool, str]]:
+        """Combined test: Test A (Authentication) first, then Test B (Model Reachability)."""
+        auth_res = self.test_authentication()
+        if not auth_res["success"]:
+            return auth_res
+
+        model_res = self.test_model_compatibility(model)
+        combined_msg = f"{auth_res['message']}\n\n{model_res['message']}"
+        return {
+            "success": model_res["success"],
+            "message": combined_msg
+        }
 
     def generate(
         self,
@@ -131,14 +191,14 @@ class HuggingFaceProvider(LLMProvider):
         if not self.api_key:
             raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙) or HF_TOKEN in .env.")
 
-        target_model = model.strip() if (model and model.strip()) else self.models[0]
+        clean_model = model.strip() if (model and model.strip() and "No models" not in model) else self.models[0]
         formatted_messages = []
         if system_prompt:
             formatted_messages.append({"role": "system", "content": system_prompt})
         formatted_messages.extend(messages)
 
         payload = {
-            "model": target_model,
+            "model": clean_model,
             "messages": formatted_messages,
             "temperature": min(max(temperature, 0.01), 1.0),
             "max_tokens": min(max_tokens, 1024),
@@ -172,14 +232,14 @@ class HuggingFaceProvider(LLMProvider):
         if not self.api_key:
             raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙) or HF_TOKEN in .env.")
 
-        target_model = model.strip() if (model and model.strip()) else self.models[0]
+        clean_model = model.strip() if (model and model.strip() and "No models" not in model) else self.models[0]
         formatted_messages = []
         if system_prompt:
             formatted_messages.append({"role": "system", "content": system_prompt})
         formatted_messages.extend(messages)
 
         payload = {
-            "model": target_model,
+            "model": clean_model,
             "messages": formatted_messages,
             "temperature": min(max(temperature, 0.01), 1.0),
             "max_tokens": min(max_tokens, 1024),
