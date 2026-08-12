@@ -116,12 +116,17 @@ class MainWindow(QMainWindow):
         self.model_combo.clear()
 
         self.model_manager.update_provider_from_settings(self.chat_service.settings)
+        is_hf = self.chat_service.settings.provider.lower() == "huggingface"
+        self.model_combo.setEditable(is_hf)
+
         models = self.model_manager.get_installed_models()
         if models:
             self.model_combo.addItems(models)
             default_model = self.model_manager.get_default_model(self.chat_service.settings.default_model)
             if default_model in models:
                 self.model_combo.setCurrentText(default_model)
+            elif is_hf and self.chat_service.settings.default_model:
+                self.model_combo.setCurrentText(self.chat_service.settings.default_model)
             self.chat_window.current_model = self.model_combo.currentText()
         else:
             self.model_combo.addItem("No models found")

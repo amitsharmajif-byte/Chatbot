@@ -6,10 +6,10 @@ from app.core.logger import logger
 from app.core.exceptions import LocalAIException
 
 DEFAULT_HF_MODELS = [
-    "Qwen/Qwen2.5-Coder-32B-Instruct",
-    "meta-llama/Llama-3.2-3B-Instruct",
+    "Qwen/Qwen2.5-72B-Instruct",
+    "meta-llama/Llama-3.1-8B-Instruct",
     "mistralai/Mistral-7B-Instruct-v0.3",
-    "google/gemma-2-2b-it",
+    "google/gemma-2-9b-it",
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
 ]
 
@@ -60,7 +60,7 @@ class HuggingFaceProvider(LLMProvider):
         if not self.api_key:
             raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙).")
 
-        target_model = model if (model and model in self.models) else self.models[0]
+        target_model = model.strip() if (model and model.strip()) else self.models[0]
         formatted_messages = []
         if system_prompt:
             formatted_messages.append({"role": "system", "content": system_prompt})
@@ -101,7 +101,7 @@ class HuggingFaceProvider(LLMProvider):
         if not self.api_key:
             raise LocalAIException("Hugging Face Token missing. Set your token in Settings (⚙).")
 
-        target_model = model if (model and model in self.models) else self.models[0]
+        target_model = model.strip() if (model and model.strip()) else self.models[0]
         formatted_messages = []
         if system_prompt:
             formatted_messages.append({"role": "system", "content": system_prompt})
