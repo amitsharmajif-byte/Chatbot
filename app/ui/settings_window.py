@@ -67,20 +67,33 @@ class SettingsWindow(QDialog):
 
         main_layout.addLayout(btn_box)
 
+from PySide6.QtWidgets import QLineEdit
+
     def init_model_tab(self):
         layout = QFormLayout(self.model_tab)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(14)
 
+        # Provider Selector
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItems(["Ollama (Local)", "Hugging Face (Serverless API)"])
+        if self.settings.provider == "huggingface":
+            self.provider_combo.setCurrentIndex(1)
+        else:
+            self.provider_combo.setCurrentIndex(0)
+        self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
+        layout.addRow("LLM Provider:", self.provider_combo)
+
+        # Hugging Face API Key
+        self.hf_key_edit = QLineEdit()
+        self.hf_key_edit.setEchoMode(QLineEdit.Password)
+        self.hf_key_edit.setPlaceholderText("hf_... (Get free API key from huggingface.co/settings/tokens)")
+        self.hf_key_edit.setText(self.settings.huggingface_api_key)
+        layout.addRow("Hugging Face Token:", self.hf_key_edit)
+
         # Default Model Dropdown
         self.model_combo = QComboBox()
-        installed_models = self.model_manager.get_installed_models()
-        if installed_models:
-            self.model_combo.addItems(installed_models)
-            if self.settings.default_model in installed_models:
-                self.model_combo.setCurrentText(self.settings.default_model)
-        else:
-            self.model_combo.addItem("No models detected")
+        self.refresh_model_combo()
 
         layout.addRow("Default Model:", self.model_combo)
 
@@ -114,6 +127,26 @@ class SettingsWindow(QDialog):
         self.system_prompt_edit.setPlainText(self.settings.system_prompt)
         self.system_prompt_edit.setMaximumHeight(100)
         layout.addRow("System Prompt:", self.system_prompt_edit)
+
+    def on_provider_changed(self, index: int):
+        self.refresh_model_combo()
+
+    def refresh_model_combo(self):
+        self.model_combo.clear()
+        selected_provider = "huggingface" if self.provider_combo.currentIndex() == 1 else "ollama"
+        temp_settings = AppSettings(
+            provider=selected_provider,
+            huggingface_api_key=self.hf_key_edit.text().strip(),
+            ollama_host=self.settings.ollama_host
+        )
+        self.model_manager.update_provider_from_settings(temp_settings)
+        installed_models = self.model_manager.get_installed_models()
+        if installed_models:
+            self.model_combo.addItems(installed_models)
+            if self.settings.default_model in installed_models:
+                self.model_combo.setCurrentText(self.settings.default_model)
+        else:
+            self.model_combo.addItem("No models detected")
 
     def init_appearance_tab(self):
         layout = QFormLayout(self.appearance_tab)
@@ -195,6 +228,8 @@ class SettingsWindow(QDialog):
             QMessageBox.information(self, "Data Cleared", "All conversation history has been cleared.")
 
     def save_settings(self):
+        self.settings.provider = "huggingface" if self.provider_combo.currentIndex() == 1 else "ollama"
+        self.settings.huggingface_api_key = self.hf_key_edit.text().strip()
         self.settings.default_model = self.model_combo.currentText()
         self.settings.temperature = self.temp_spin.value()
         self.settings.max_tokens = self.max_tokens_spin.value()

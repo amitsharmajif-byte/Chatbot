@@ -283,7 +283,9 @@ class ChatRepository:
         """Save AppSettings object to database."""
         try:
             data = {
+                "provider": settings.provider,
                 "ollama_host": settings.ollama_host,
+                "huggingface_api_key": settings.huggingface_api_key,
                 "default_model": settings.default_model,
                 "temperature": settings.temperature,
                 "max_tokens": settings.max_tokens,

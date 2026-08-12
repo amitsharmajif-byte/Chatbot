@@ -40,7 +40,9 @@ class Conversation:
 
 @dataclass
 class AppSettings:
+    provider: str = "ollama"  # ollama, huggingface
     ollama_host: str = "http://localhost:11434"
+    huggingface_api_key: str = ""
     default_model: str = ""
     temperature: float = 0.7
     max_tokens: int = 2048

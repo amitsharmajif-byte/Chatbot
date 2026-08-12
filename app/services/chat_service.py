@@ -6,6 +6,7 @@ from app.database.repository import ChatRepository
 from app.database.models import Conversation, Message, AppSettings
 from app.llm.base import LLMProvider
 from app.llm.ollama_provider import OllamaProvider
+from app.llm.huggingface_provider import HuggingFaceProvider
 from app.services.title_service import TitleService
 from app.core.logger import logger
 from app.core.exceptions import LocalAIException
@@ -19,12 +20,22 @@ class ChatService:
         llm_provider: Optional[LLMProvider] = None
     ):
         self.repo = repository or ChatRepository()
-        self.llm = llm_provider or OllamaProvider()
         self.settings: AppSettings = self.repo.load_app_settings()
+        if llm_provider:
+            self.llm = llm_provider
+        else:
+            self._update_llm_provider()
+
+    def _update_llm_provider(self):
+        if self.settings.provider.lower() == "huggingface":
+            self.llm = HuggingFaceProvider(api_key=self.settings.huggingface_api_key)
+        else:
+            self.llm = OllamaProvider(host=self.settings.ollama_host)
 
     def reload_settings(self) -> AppSettings:
         """Reload settings from repository."""
         self.settings = self.repo.load_app_settings()
+        self._update_llm_provider()
         return self.settings
 
     def create_new_conversation(self, model_name: str = "") -> Conversation:

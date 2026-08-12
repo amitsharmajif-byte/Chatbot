@@ -111,10 +111,11 @@ class MainWindow(QMainWindow):
         self.chat_window.input_box.set_enter_to_send(self.chat_service.settings.enter_to_send)
 
     def populate_models(self):
-        """Query Ollama and populate model selector dropdown."""
+        """Query active LLM provider and populate model selector dropdown."""
         self.model_combo.blockSignals(True)
         self.model_combo.clear()
 
+        self.model_manager.update_provider_from_settings(self.chat_service.settings)
         models = self.model_manager.get_installed_models()
         if models:
             self.model_combo.addItems(models)
@@ -128,27 +129,34 @@ class MainWindow(QMainWindow):
         self.model_combo.blockSignals(False)
 
     def check_ollama_health_on_launch(self):
-        """Check Ollama service status on startup."""
-        if not self.model_manager.check_health():
-            QMessageBox.warning(
-                self,
-                "Ollama Not Detected",
-                "Unable to connect to local Ollama server at http://localhost:11434.\n\n"
-                "Please make sure Ollama is installed and running on your computer.\n"
-                "After starting Ollama, click the 🔄 refresh button in the header bar."
-            )
-        elif not self.model_manager.get_installed_models():
-            QMessageBox.information(
-                self,
-                "No Local Models Found",
-                "Welcome to LocalAI Chat!\n\n"
-                "To start chatting, you need to download a model in Ollama.\n"
-                "Open your terminal and run a model command such as:\n\n"
-                "  ollama run qwen2.5\n"
-                "  or\n"
-                "  ollama run llama3.2\n\n"
-                "Once downloaded, click 🔄 refresh to load the model."
-            )
+        """Check active provider status on startup."""
+        provider_name = self.chat_service.settings.provider.lower()
+        if provider_name == "huggingface":
+            if not self.chat_service.settings.huggingface_api_key:
+                QMessageBox.information(
+                    self,
+                    "Hugging Face API Key Needed",
+                    "Welcome to LocalAI Chat!\n\n"
+                    "You have selected Hugging Face as your provider.\n"
+                    "Please open Settings (⚙ icon at top right) and enter your free Hugging Face API key."
+                )
+        else:
+            if not self.model_manager.check_health():
+                QMessageBox.warning(
+                    self,
+                    "Ollama Not Detected",
+                    "Unable to connect to local Ollama server at http://localhost:11434.\n\n"
+                    "Option A: Start Ollama on your computer and click 🔄 refresh.\n"
+                    "Option B: Open Settings (⚙ icon) and switch provider to 'Hugging Face (Serverless API)' using a free Hugging Face token!"
+                )
+            elif not self.model_manager.get_installed_models():
+                QMessageBox.information(
+                    self,
+                    "No Local Models Found",
+                    "Welcome to LocalAI Chat!\n\n"
+                    "To start chatting with Ollama, run in terminal:\n  ollama run qwen2.5\n\n"
+                    "Or open Settings (⚙ icon) to switch to Hugging Face free API."
+                )
 
     def setup_shortcuts(self):
         """Register application global shortcuts."""

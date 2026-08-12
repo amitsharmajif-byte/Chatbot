@@ -1,6 +1,8 @@
 from typing import List, Optional
 from app.llm.base import LLMProvider
 from app.llm.ollama_provider import OllamaProvider
+from app.llm.huggingface_provider import HuggingFaceProvider
+from app.database.models import AppSettings
 from app.core.logger import logger
 
 class ModelManager:
@@ -8,6 +10,14 @@ class ModelManager:
 
     def __init__(self, provider: Optional[LLMProvider] = None):
         self.provider = provider or OllamaProvider()
+
+    def update_provider_from_settings(self, settings: AppSettings) -> LLMProvider:
+        """Update active provider based on AppSettings."""
+        if settings.provider.lower() == "huggingface":
+            self.provider = HuggingFaceProvider(api_key=settings.huggingface_api_key)
+        else:
+            self.provider = OllamaProvider(host=settings.ollama_host)
+        return self.provider
 
     def check_health(self) -> bool:
         """Check if active LLM provider service is available."""
@@ -28,5 +38,4 @@ class ModelManager:
             return preferred_model
         if preferred_model and preferred_model in models:
             return preferred_model
-        # Return first model available
-        return models[0]
+        return models[0] if models else preferred_model
