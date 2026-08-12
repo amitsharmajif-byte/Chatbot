@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QTextEdit, QPushButton, QLabel, QFileDialog
+    QWidget, QHBoxLayout, QVBoxLayout, QTextEdit, QPushButton, QLabel, QFileDialog, QFrame
 )
 from PySide6.QtGui import QKeyEvent, QIcon, QFont
 
@@ -12,7 +12,7 @@ class ChatTextEdit(QTextEdit):
         super().__init__(parent)
         self.setObjectName("ChatInputEdit")
         self.enter_to_send = enter_to_send
-        self.setPlaceholderText("Type your message... (Shift+Enter for new line)")
+        self.setPlaceholderText("Ask LocalAI anything...")
         self.setAcceptRichText(False)
         self.setMaximumHeight(150)
         self.setMinimumHeight(44)
@@ -47,8 +47,8 @@ class ChatInputBox(QWidget):
         self.is_generating = False
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         # Attachment status banner
         self.attachment_banner = QWidget()
@@ -71,14 +71,17 @@ class ChatInputBox(QWidget):
 
         layout.addWidget(self.attachment_banner)
 
-        # Input Row Layout
-        input_row = QHBoxLayout()
-        input_row.setSpacing(8)
+        # Inner Frame
+        self.inner_frame = QFrame()
+        self.inner_frame.setObjectName("InputInnerFrame")
+        inner_layout = QHBoxLayout(self.inner_frame)
+        inner_layout.setContentsMargins(8, 8, 8, 8)
+        inner_layout.setSpacing(12)
 
         # Attach button
         self.attach_btn = QPushButton("📎")
         self.attach_btn.setObjectName("AttachButton")
-        self.attach_btn.setFixedSize(38, 38)
+        self.attach_btn.setFixedSize(36, 36)
         self.attach_btn.setToolTip("Attach text file (.txt, .md, .csv, .json)")
         self.attach_btn.setCursor(Qt.PointingHandCursor)
         self.attach_btn.clicked.connect(self.select_attachment)
@@ -88,17 +91,17 @@ class ChatInputBox(QWidget):
         self.text_edit.send_requested.connect(self.on_send_clicked)
 
         # Send / Stop Button
-        self.action_btn = QPushButton("Send ▶")
+        self.action_btn = QPushButton("➤")
         self.action_btn.setObjectName("SendButton")
-        self.action_btn.setMinimumWidth(80)
+        self.action_btn.setFixedSize(40, 40)
         self.action_btn.setCursor(Qt.PointingHandCursor)
         self.action_btn.clicked.connect(self.on_action_clicked)
 
-        input_row.addWidget(self.attach_btn, 0, Qt.AlignBottom)
-        input_row.addWidget(self.text_edit, 1)
-        input_row.addWidget(self.action_btn, 0, Qt.AlignBottom)
+        inner_layout.addWidget(self.attach_btn, 0, Qt.AlignBottom)
+        inner_layout.addWidget(self.text_edit, 1)
+        inner_layout.addWidget(self.action_btn, 0, Qt.AlignBottom)
 
-        layout.addLayout(input_row)
+        layout.addWidget(self.inner_frame)
 
     def set_enter_to_send(self, enabled: bool):
         self.text_edit.enter_to_send = enabled
@@ -125,11 +128,11 @@ class ChatInputBox(QWidget):
     def set_generating_state(self, generating: bool):
         self.is_generating = generating
         if generating:
-            self.action_btn.setText("Stop ⏹")
+            self.action_btn.setText("⏹")
             self.action_btn.setObjectName("StopButton")
             self.attach_btn.setEnabled(False)
         else:
-            self.action_btn.setText("Send ▶")
+            self.action_btn.setText("➤")
             self.action_btn.setObjectName("SendButton")
             self.attach_btn.setEnabled(True)
         # Force stylesheet update

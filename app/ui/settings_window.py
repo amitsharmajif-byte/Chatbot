@@ -8,6 +8,7 @@ from app.database.models import AppSettings
 from app.llm.model_manager import ModelManager
 from app.core.config import DB_PATH
 from app.core.logger import logger
+from app.llm.huggingface_provider import HuggingFaceProvider
 
 class SettingsWindow(QDialog):
     """Settings dialog managing user configuration and preferences."""
@@ -15,8 +16,9 @@ class SettingsWindow(QDialog):
 
     def __init__(self, chat_service: ChatService, model_manager: ModelManager, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Settings - LocalAI Chat")
-        self.setMinimumSize(540, 460)
+        self.setWindowTitle("Settings — LocalAI Chat")
+        self.setMinimumSize(560, 500)
+        self.setStyleSheet("background-color: #0B0D16;")
         self.chat_service = chat_service
         self.model_manager = model_manager
         self.settings: AppSettings = chat_service.settings
@@ -31,22 +33,22 @@ class SettingsWindow(QDialog):
         # 1. Model Tab
         self.model_tab = QWidget()
         self.init_model_tab()
-        self.tabs.addTab(self.model_tab, "🤖 Model")
+        self.tabs.addTab(self.model_tab, "◈  Model")
 
         # 2. Appearance Tab
         self.appearance_tab = QWidget()
         self.init_appearance_tab()
-        self.tabs.addTab(self.appearance_tab, "🎨 Appearance")
+        self.tabs.addTab(self.appearance_tab, "◉  Appearance")
 
         # 3. Chat Preferences Tab
         self.chat_tab = QWidget()
         self.init_chat_tab()
-        self.tabs.addTab(self.chat_tab, "💬 Chat")
+        self.tabs.addTab(self.chat_tab, "✦  Chat")
 
         # 4. Data & Privacy Tab
         self.data_tab = QWidget()
         self.init_data_tab()
-        self.tabs.addTab(self.data_tab, "🔒 Data & Privacy")
+        self.tabs.addTab(self.data_tab, "🔒  Privacy")
 
         main_layout.addWidget(self.tabs, 1)
 
@@ -55,11 +57,11 @@ class SettingsWindow(QDialog):
         btn_box.addStretch()
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setObjectName("IconButton")
+        cancel_btn.setObjectName("CancelButton")
         cancel_btn.clicked.connect(self.reject)
 
         save_btn = QPushButton("Save Settings")
-        save_btn.setObjectName("SendButton")
+        save_btn.setObjectName("SaveButton")
         save_btn.clicked.connect(self.save_settings)
 
         btn_box.addWidget(cancel_btn)
@@ -88,8 +90,8 @@ class SettingsWindow(QDialog):
         self.hf_key_edit.setPlaceholderText("hf_... (Get free API key from huggingface.co/settings/tokens)")
         self.hf_key_edit.setText(self.settings.huggingface_api_key)
 
-        test_conn_btn = QPushButton("🧪 Test HF Connection")
-        test_conn_btn.setObjectName("IconButton")
+        test_conn_btn = QPushButton("🧪 Test Connection")
+        test_conn_btn.setObjectName("TestConnectionButton")
         test_conn_btn.setToolTip("Test Hugging Face Token validity and model reachability")
         test_conn_btn.clicked.connect(self.test_hf_connection)
 
@@ -140,7 +142,6 @@ class SettingsWindow(QDialog):
         self.refresh_model_combo()
 
     def test_hf_connection(self):
-        from app.llm.huggingface_provider import HuggingFaceProvider
         entered_key = self.hf_key_edit.text().strip()
         selected_model = self.model_combo.currentText()
         provider = HuggingFaceProvider(api_key=entered_key)
@@ -181,7 +182,7 @@ class SettingsWindow(QDialog):
     def init_chat_tab(self):
         layout = QVBoxLayout(self.chat_tab)
         layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
 
         self.streaming_cb = QCheckBox("Enable Response Streaming")
         self.streaming_cb.setChecked(self.settings.streaming_enabled)
@@ -213,8 +214,8 @@ class SettingsWindow(QDialog):
         layout.addWidget(db_label)
 
         # Action Buttons
-        clear_db_btn = QPushButton("🗑 Clear All Conversations")
-        clear_db_btn.setStyleSheet("background-color: #ef4444; color: #ffffff; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold;")
+        clear_db_btn = QPushButton("🗑  Clear All Conversations")
+        clear_db_btn.setObjectName("DangerButton")
         clear_db_btn.setCursor(Qt.PointingHandCursor)
         clear_db_btn.clicked.connect(self.clear_all_data)
         layout.addWidget(clear_db_btn)

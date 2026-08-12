@@ -24,11 +24,11 @@ class Sidebar(QWidget):
         self.chat_service = chat_service
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 16, 12, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 16, 14, 16)
+        layout.setSpacing(10)
 
         # "+ New Chat" Button
-        self.new_chat_btn = QPushButton("+ New Chat")
+        self.new_chat_btn = QPushButton("✦  New Chat")
         self.new_chat_btn.setObjectName("NewChatButton")
         self.new_chat_btn.setCursor(Qt.PointingHandCursor)
         self.new_chat_btn.setToolTip("Start a new conversation (Ctrl+N)")
@@ -38,13 +38,13 @@ class Sidebar(QWidget):
         # Search Input
         self.search_input = QLineEdit()
         self.search_input.setObjectName("SearchInput")
-        self.search_input.setPlaceholderText("🔍 Search conversations... (Ctrl+K)")
+        self.search_input.setPlaceholderText("🔍  Search conversations...  (Ctrl+K)")
         self.search_input.textChanged.connect(self.on_search_text_changed)
         layout.addWidget(self.search_input)
 
         # Section Header
-        history_header = QLabel("Chat History")
-        history_header.setStyleSheet("color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-top: 6px;")
+        history_header = QLabel("CONVERSATIONS")
+        history_header.setObjectName("SidebarSectionLabel")
         layout.addWidget(history_header)
 
         # History ListWidget
@@ -57,8 +57,8 @@ class Sidebar(QWidget):
         layout.addWidget(self.history_list, 1)
 
         # Settings Button at bottom
-        self.settings_btn = QPushButton("⚙ Settings")
-        self.settings_btn.setObjectName("IconButton")
+        self.settings_btn = QPushButton("⚙  Settings")
+        self.settings_btn.setObjectName("SidebarSettingsButton")
         self.settings_btn.setCursor(Qt.PointingHandCursor)
         self.settings_btn.clicked.connect(lambda: self.settings_requested.emit())
         layout.addWidget(self.settings_btn)

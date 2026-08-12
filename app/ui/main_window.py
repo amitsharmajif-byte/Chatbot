@@ -10,8 +10,10 @@ from app.ui.sidebar import Sidebar
 from app.ui.chat_window import ChatWindow
 from app.ui.settings_window import SettingsWindow
 from app.ui.styles import StyleManager
+from app.ui.effects import PulsingDot
 from app.core.config import APP_NAME, APP_VERSION
 from app.core.logger import logger
+
 
 class MainWindow(QMainWindow):
     """Main Application Window for LocalAI Chat."""
@@ -25,7 +27,7 @@ class MainWindow(QMainWindow):
         self.resize(1100, 750)
         self.setMinimumSize(800, 550)
 
-        # Main Central Widget & Layout
+        # ── Central Widget & Main Layout ──
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -33,38 +35,57 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Header Bar
+        # ── Header Bar ──
         self.header_bar = QWidget()
         self.header_bar.setObjectName("HeaderBar")
         header_layout = QHBoxLayout(self.header_bar)
-        header_layout.setContentsMargins(16, 8, 16, 8)
+        header_layout.setContentsMargins(16, 0, 16, 0)
+        header_layout.setSpacing(12)
+
+        # Logo / Title with Pulsing Status Dot
+        title_container = QWidget()
+        title_container.setStyleSheet("background: transparent;")
+        title_layout = QHBoxLayout(title_container)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(8)
+
+        app_icon = QLabel("✦")
+        app_icon.setObjectName("AppTitleAccent")
 
         app_title = QLabel(APP_NAME)
         app_title.setObjectName("AppTitleLabel")
 
+        self.status_dot = PulsingDot(color="#10B981", size=8)
+        self.status_dot.setToolTip("AI Status: Ready")
+
+        title_layout.addWidget(app_icon)
+        title_layout.addWidget(app_title)
+        title_layout.addWidget(self.status_dot)
+
         # Model Selector Dropdown
         model_label = QLabel("Model:")
-        model_label.setStyleSheet("color: #94a3b8; font-weight: 500; margin-left: 12px;")
+        model_label.setObjectName("ModelLabel")
 
         self.model_combo = QComboBox()
-        self.model_combo.setToolTip("Select active local LLM model")
+        self.model_combo.setToolTip("Select active AI model")
+        self.model_combo.setMinimumWidth(220)
         self.model_combo.currentTextChanged.connect(self.on_model_changed)
 
         # Refresh Models Button
         refresh_models_btn = QPushButton("🔄")
         refresh_models_btn.setObjectName("IconButton")
-        refresh_models_btn.setToolTip("Refresh Ollama installed models list")
-        refresh_models_btn.setFixedSize(32, 32)
+        refresh_models_btn.setToolTip("Refresh available models")
+        refresh_models_btn.setFixedSize(34, 34)
         refresh_models_btn.clicked.connect(self.populate_models)
 
         # Settings Button
         settings_btn = QPushButton("⚙")
         settings_btn.setObjectName("IconButton")
         settings_btn.setToolTip("Open Settings (Ctrl+,)")
-        settings_btn.setFixedSize(32, 32)
+        settings_btn.setFixedSize(34, 34)
         settings_btn.clicked.connect(self.open_settings)
 
-        header_layout.addWidget(app_title)
+        header_layout.addWidget(title_container)
         header_layout.addStretch()
         header_layout.addWidget(model_label)
         header_layout.addWidget(self.model_combo)
@@ -73,7 +94,7 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(self.header_bar)
 
-        # Splitter Layout (Sidebar + ChatWindow)
+        # ── Splitter Layout (Sidebar + ChatWindow) ──
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(1)
 
@@ -93,13 +114,13 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(splitter, 1)
 
-        # Setup Keyboard Shortcuts
+        # ── Setup Keyboard Shortcuts ──
         self.setup_shortcuts()
 
-        # Apply Theme
+        # ── Apply Theme ──
         self.apply_theme()
 
-        # Populate Models & Check Health
+        # ── Populate Models & Check Health ──
         self.populate_models()
         QTimer.singleShot(600, self.check_ollama_health_on_launch)
 
@@ -128,8 +149,12 @@ class MainWindow(QMainWindow):
             elif is_hf and self.chat_service.settings.default_model:
                 self.model_combo.setCurrentText(self.chat_service.settings.default_model)
             self.chat_window.current_model = self.model_combo.currentText()
+            self.status_dot.set_active(True)
+            self.status_dot.setToolTip("AI Status: Ready")
         else:
             self.model_combo.addItem("No models found")
+            self.status_dot.set_active(False)
+            self.status_dot.setToolTip("AI Status: No models available")
 
         self.model_combo.blockSignals(False)
 
@@ -138,6 +163,8 @@ class MainWindow(QMainWindow):
         provider_name = self.chat_service.settings.provider.lower()
         if provider_name == "huggingface":
             if not self.chat_service.settings.huggingface_api_key:
+                self.status_dot.set_active(False)
+                self.status_dot.setToolTip("AI Status: API Key Needed")
                 QMessageBox.information(
                     self,
                     "Hugging Face API Key Needed",
@@ -145,8 +172,13 @@ class MainWindow(QMainWindow):
                     "You have selected Hugging Face as your provider.\n"
                     "Please open Settings (⚙ icon at top right) and enter your free Hugging Face API key."
                 )
+            else:
+                self.status_dot.set_active(True)
+                self.status_dot.setToolTip("AI Status: Hugging Face Connected")
         else:
             if not self.model_manager.check_health():
+                self.status_dot.set_active(False)
+                self.status_dot.setToolTip("AI Status: Ollama Offline")
                 QMessageBox.warning(
                     self,
                     "Ollama Not Detected",
@@ -155,6 +187,8 @@ class MainWindow(QMainWindow):
                     "Option B: Open Settings (⚙ icon) and switch provider to 'Hugging Face (Serverless API)' using a free Hugging Face token!"
                 )
             elif not self.model_manager.get_installed_models():
+                self.status_dot.set_active(False)
+                self.status_dot.setToolTip("AI Status: No Local Models")
                 QMessageBox.information(
                     self,
                     "No Local Models Found",
@@ -162,22 +196,16 @@ class MainWindow(QMainWindow):
                     "To start chatting with Ollama, run in terminal:\n  ollama run qwen2.5\n\n"
                     "Or open Settings (⚙ icon) to switch to Hugging Face free API."
                 )
+            else:
+                self.status_dot.set_active(True)
+                self.status_dot.setToolTip("AI Status: Ollama Connected")
 
     def setup_shortcuts(self):
         """Register application global shortcuts."""
-        # Ctrl + N -> New Chat
         QShortcut(QKeySequence("Ctrl+N"), self, self.on_new_chat)
-
-        # Ctrl + K -> Search Chats
         QShortcut(QKeySequence("Ctrl+K"), self, self.sidebar.focus_search)
-
-        # Ctrl + , -> Settings
         QShortcut(QKeySequence("Ctrl+,"), self, self.open_settings)
-
-        # Esc -> Stop Generation
         QShortcut(QKeySequence("Escape"), self, self.chat_window.stop_generation)
-
-        # Ctrl + Shift + C -> Copy Response
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.copy_last_assistant_response)
 
     def on_model_changed(self, model_name: str):
@@ -193,11 +221,11 @@ class MainWindow(QMainWindow):
         conv = self.chat_service.create_new_conversation(model_name=model_name)
         self.sidebar.refresh_history()
         self.sidebar.select_conversation(conv.id)
-        self.chat_window.load_conversation(conv.id, model_name=model_name)
+        self.chat_window.new_chat()
 
     def on_conversation_selected(self, conversation_id: str):
         """Load selected conversation into chat window."""
-        self.chat_window.load_conversation(conversation_id, model_name=self.model_combo.currentText())
+        self.chat_window.load_conversation(conversation_id)
 
     def on_conversation_updated(self, conversation_id: str):
         """Refresh sidebar list when conversation title/messages update."""
