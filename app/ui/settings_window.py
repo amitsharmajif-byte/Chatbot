@@ -18,7 +18,7 @@ class SettingsWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings — LocalAI Chat")
         self.setMinimumSize(560, 500)
-        self.setStyleSheet("background-color: #0B0D16;")
+        self.setObjectName("SettingsDialog")
         self.chat_service = chat_service
         self.model_manager = model_manager
         self.settings: AppSettings = chat_service.settings

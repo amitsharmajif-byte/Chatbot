@@ -244,6 +244,7 @@ class MainWindow(QMainWindow):
             model_manager=self.model_manager,
             parent=self
         )
+        dialog.setStyleSheet(self.styleSheet())
         dialog.settings_saved.connect(self.on_settings_saved)
         dialog.exec_()
 

@@ -80,11 +80,12 @@ class MessageWidget(QWidget):
     """Custom Widget representing a single chat message card."""
     regenerate_requested = Signal()
 
-    def __init__(self, role: str, content: str, timestamp: str = "", parent=None):
+    def __init__(self, role: str, content: str, timestamp: str = "", show_timestamp: bool = True, parent=None):
         super().__init__(parent)
         self.role = role
         self.raw_content = content
         self.timestamp = timestamp
+        self.show_timestamp = show_timestamp
 
         self.is_streaming = False
         self.cursor_visible = True
@@ -116,6 +117,7 @@ class MessageWidget(QWidget):
 
         time_label = QLabel(timestamp or "")
         time_label.setObjectName("MessageTimestampLabel")
+        time_label.setVisible(show_timestamp)
 
         header_layout.addWidget(role_label)
         header_layout.addStretch()
